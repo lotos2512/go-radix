@@ -355,6 +355,7 @@ func (n *node) mergeChild() {
 func (t *Tree) Get(s string) (interface{}, bool) {
 	n := t.root
 	search := s
+	var prevM *node
 	for {
 		// Check for key exhaution
 		if len(search) == 0 {
@@ -367,9 +368,12 @@ func (t *Tree) Get(s string) (interface{}, bool) {
 		// Look for an edge
 		n = n.getEdge(search[0])
 		if n == nil {
+			if prevM != n {
+				return prevM.leaf.val, true
+			}
 			break
 		}
-
+		prevM = n
 		// Consume the search prefix
 		if strings.HasPrefix(search, n.prefix) {
 			search = search[len(n.prefix):]
