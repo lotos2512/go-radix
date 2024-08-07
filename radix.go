@@ -368,7 +368,7 @@ func (t *Tree) Get(s string) (interface{}, bool) {
 		// Look for an edge
 		n = n.getEdge(search[0])
 		if n == nil {
-			if prevM != n {
+			if prevM != n && prevM.leaf != nil {
 				return prevM.leaf.val, true
 			}
 			break
