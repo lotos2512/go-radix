@@ -1,27 +1,29 @@
 package radix
 
 import (
+	"runtime"
 	"sort"
 	"strings"
+	"unsafe"
 )
 
 // WalkFn is used when walking the tree. Takes a
 // key and value, returning if iteration should
 // be terminated.
-type WalkFn func(key string, value interface{}) bool
+type WalkFn func(key string, node *Node) bool
 
 // leafNode is used to represent a value
 type leafNode struct {
 	val interface{}
 }
 
-// edge is used to represent an edge node
+// edge is used to represent an edge Node
 type edge struct {
 	label byte
-	node  *node
+	node  *Node
 }
 
-type node struct {
+type Node struct {
 	// leaf is used to store possible leaf
 	leaf *leafNode
 
@@ -34,11 +36,22 @@ type node struct {
 	edges edges
 }
 
-func (n *node) isLeaf() bool {
+func (n *Node) GetPrefix() string {
+	return n.prefix
+}
+
+func (n *Node) GetValue() interface{} {
+	if n.leaf == nil {
+		return ""
+	}
+	return n.leaf.val
+}
+
+func (n *Node) isLeaf() bool {
 	return n.leaf != nil
 }
 
-func (n *node) addEdge(e edge) {
+func (n *Node) addEdge(e edge) {
 	num := len(n.edges)
 	idx := sort.Search(num, func(i int) bool {
 		return n.edges[i].label >= e.label
@@ -49,7 +62,7 @@ func (n *node) addEdge(e edge) {
 	n.edges[idx] = e
 }
 
-func (n *node) updateEdge(label byte, node *node) {
+func (n *Node) updateEdge(label byte, node *Node) {
 	num := len(n.edges)
 	idx := sort.Search(num, func(i int) bool {
 		return n.edges[i].label >= label
@@ -61,7 +74,7 @@ func (n *node) updateEdge(label byte, node *node) {
 	panic("replacing missing edge")
 }
 
-func (n *node) getEdge(label byte) *node {
+func (n *Node) getEdge(label byte) *Node {
 	num := len(n.edges)
 	idx := sort.Search(num, func(i int) bool {
 		return n.edges[i].label >= label
@@ -72,7 +85,7 @@ func (n *node) getEdge(label byte) *node {
 	return nil
 }
 
-func (n *node) delEdge(label byte) {
+func (n *Node) delEdge(label byte) {
 	num := len(n.edges)
 	idx := sort.Search(num, func(i int) bool {
 		return n.edges[i].label >= label
@@ -107,8 +120,10 @@ func (e edges) Sort() {
 // a standard hash map is prefix-based lookups and
 // ordered iteration,
 type Tree struct {
-	root *node
-	size int
+	root            *Node
+	size            int
+	memorySize      *uintptr // only post func Optimize()
+	optimizeEnabled bool
 }
 
 // New returns an empty Tree
@@ -119,7 +134,7 @@ func New() *Tree {
 // NewFromMap returns a new tree containing the keys
 // from an existing map
 func NewFromMap(m map[string]interface{}) *Tree {
-	t := &Tree{root: &node{}}
+	t := &Tree{root: &Node{}}
 	for k, v := range m {
 		t.Insert(k, v)
 	}
@@ -129,6 +144,10 @@ func NewFromMap(m map[string]interface{}) *Tree {
 // Len is used to return the number of elements in the tree
 func (t *Tree) Len() int {
 	return t.size
+}
+
+func (t *Tree) MemoryLen() *uintptr {
+	return t.memorySize
 }
 
 // longestPrefix finds the length of the shared prefix
@@ -147,10 +166,32 @@ func longestPrefix(k1, k2 string) int {
 	return i
 }
 
-// Insert is used to add a newentry or update
-// an existing entry. Returns true if an existing record is updated.
+func (t *Tree) Optimize() {
+	defer runtime.GC()
+	// clear capacity
+	t.optimizeEnabled = true
+
+	v := unsafe.Sizeof(t)
+	if t.root != nil && len(t.root.edges) > 0 {
+		v += unsafe.Sizeof(t.root)
+		t.root.edges = t.root.edges[:len(t.root.edges):len(t.root.edges)]
+		v += unsafe.Sizeof(t.root.edges)
+	}
+
+	t.Walk(func(key string, node *Node) bool {
+		v += unsafe.Sizeof(node)
+		if len(node.edges) > 0 {
+			node.edges = node.edges[:len(node.edges):len(node.edges)]
+			v += unsafe.Sizeof(node.edges)
+		}
+		return false
+	})
+	t.memorySize = &v
+	t.optimizeEnabled = false
+}
+
 func (t *Tree) Insert(s string, v interface{}) (interface{}, bool) {
-	var parent *node
+	var parent *Node
 	n := t.root
 	search := s
 	for {
@@ -177,7 +218,7 @@ func (t *Tree) Insert(s string, v interface{}) (interface{}, bool) {
 		if n == nil {
 			e := edge{
 				label: search[0],
-				node: &node{
+				node: &Node{
 					leaf: &leafNode{
 						val: v,
 					},
@@ -196,36 +237,36 @@ func (t *Tree) Insert(s string, v interface{}) (interface{}, bool) {
 			continue
 		}
 
-		// Split the node
+		// Split the Node
 		t.size++
-		child := &node{
+		child := &Node{
 			prefix: search[:commonPrefix],
 		}
 		parent.updateEdge(search[0], child)
 
-		// Restore the existing node
+		// Restore the existing Node
 		child.addEdge(edge{
 			label: n.prefix[commonPrefix],
 			node:  n,
 		})
 		n.prefix = n.prefix[commonPrefix:]
 
-		// Create a new leaf node
+		// Create a new leaf Node
 		leaf := &leafNode{
 			val: v,
 		}
 
-		// If the new key is a subset, add to this node
+		// If the new key is a subset, add to this Node
 		search = search[commonPrefix:]
 		if len(search) == 0 {
 			child.leaf = leaf
 			return nil, false
 		}
 
-		// Create a new edge for the node
+		// Create a new edge for the Node
 		child.addEdge(edge{
 			label: search[0],
-			node: &node{
+			node: &Node{
 				leaf:   leaf,
 				prefix: search,
 			},
@@ -237,7 +278,7 @@ func (t *Tree) Insert(s string, v interface{}) (interface{}, bool) {
 // Delete is used to delete a key, returning the previous
 // value and if it was deleted
 func (t *Tree) Delete(s string) (interface{}, bool) {
-	var parent *node
+	var parent *Node
 	var label byte
 	n := t.root
 	search := s
@@ -273,12 +314,12 @@ DELETE:
 	n.leaf = nil
 	t.size--
 
-	// Check if we should delete this node from the parent
+	// Check if we should delete this Node from the parent
 	if parent != nil && len(n.edges) == 0 {
 		parent.delEdge(label)
 	}
 
-	// Check if we should merge this node
+	// Check if we should merge this Node
 	if n != t.root && len(n.edges) == 1 {
 		n.mergeChild()
 	}
@@ -299,13 +340,13 @@ func (t *Tree) DeletePrefix(s string) int {
 }
 
 // delete does a recursive deletion
-func (t *Tree) deletePrefix(parent, n *node, prefix string) int {
+func (t *Tree) deletePrefix(parent, n *Node, prefix string) int {
 	// Check for key exhaustion
 	if len(prefix) == 0 {
-		// Remove the leaf node
+		// Remove the leaf Node
 		subTreeSize := 0
-		//recursively walk from all edges of the node to be deleted
-		recursiveWalk(n, func(s string, v interface{}) bool {
+		//recursively walk from all edges of the Node to be deleted
+		t.recursiveWalk(n, func(s string, node *Node) bool {
 			subTreeSize++
 			return false
 		}, prefix)
@@ -338,7 +379,7 @@ func (t *Tree) deletePrefix(parent, n *node, prefix string) int {
 	return t.deletePrefix(n, child, prefix)
 }
 
-func (n *node) mergeChild() {
+func (n *Node) mergeChild() {
 	e := n.edges[0]
 	child := e.node
 	n.prefix = n.prefix + child.prefix
@@ -381,7 +422,7 @@ func (t *Tree) Get(s string) (interface{}, bool) {
 func (t *Tree) GetLastEqual(s string) (interface{}, bool) {
 	n := t.root
 	search := s
-	var prevM *node
+	var prevM *Node
 	for {
 		// Check for key exhaution
 		if len(search) == 0 {
@@ -418,7 +459,7 @@ func (t *Tree) LongestPrefix(s string) (string, interface{}, bool) {
 	search := s
 	key := ""
 	for {
-		// Look for a leaf node
+		// Look for a leaf Node
 		if n.isLeaf() {
 			last = n.leaf
 		}
@@ -486,7 +527,7 @@ func (t *Tree) Maximum() (string, interface{}, bool) {
 
 // Walk is used to walk the tree
 func (t *Tree) Walk(fn WalkFn) {
-	recursiveWalk(t.root, fn, "")
+	t.recursiveWalk(t.root, fn, "")
 }
 
 // WalkPrefix is used to walk the tree under a prefix
@@ -497,7 +538,7 @@ func (t *Tree) WalkPrefix(prefix string, fn WalkFn) {
 	for {
 		// Check for key exhaustion
 		if len(search) == 0 {
-			recursiveWalk(n, fn, key)
+			t.recursiveWalk(n, fn, key)
 			return
 		}
 
@@ -516,7 +557,7 @@ func (t *Tree) WalkPrefix(prefix string, fn WalkFn) {
 		if strings.HasPrefix(n.prefix, search) {
 			// Child may be under our search prefix
 			key = key + n.prefix
-			recursiveWalk(n, fn, key)
+			t.recursiveWalk(n, fn, key)
 		}
 		return
 	}
@@ -532,7 +573,7 @@ func (t *Tree) WalkPath(path string, fn WalkFn) {
 	key := ""
 	for {
 		// Visit the leaf values if any
-		if n.leaf != nil && fn(key, n.leaf.val) {
+		if n.leaf != nil && fn(key, n) {
 			return
 		}
 
@@ -557,17 +598,21 @@ func (t *Tree) WalkPath(path string, fn WalkFn) {
 	}
 }
 
-// recursiveWalk is used to do a pre-order walk of a node
+// recursiveWalk is used to do a pre-order walk of a Node
 // recursively. Returns true if the walk should be aborted
-func recursiveWalk(n *node, fn WalkFn, key string) bool {
-	return _recursiveWalk(n, fn, key)
+func (t *Tree) recursiveWalk(n *Node, fn WalkFn, key string) bool {
+	return t._recursiveWalk(n, fn, key)
 }
 
-// recursiveWalk is used to do a pre-order walk of a node
+// recursiveWalk is used to do a pre-order walk of a Node
 // recursively. Returns true if the walk should be aborted
-func _recursiveWalk(n *node, fn WalkFn, key string) bool {
+func (t *Tree) _recursiveWalk(n *Node, fn WalkFn, key string) bool {
 	// Visit the leaf values if any
-	if n.leaf != nil && fn(key, n.leaf.val) {
+	if len(n.edges) > 0 && t.optimizeEnabled {
+		fn(key, n)
+	}
+
+	if n.leaf != nil && fn(key, n) {
 		return true
 	}
 
@@ -576,12 +621,12 @@ func _recursiveWalk(n *node, fn WalkFn, key string) bool {
 	k := len(n.edges) // keeps track of number of edges in previous iteration
 	for i < k {
 		e := n.edges[i]
-		if _recursiveWalk(e.node, fn, key+e.node.prefix) {
+		if t._recursiveWalk(e.node, fn, key+e.node.prefix) {
 			return true
 		}
-		// It is a possibility that the WalkFn modified the node we are
+		// It is a possibility that the WalkFn modified the Node we are
 		// iterating on. If there are no more edges, mergeChild happened,
-		// so the last edge became the current node n, on which we'll
+		// so the last edge became the current Node n, on which we'll
 		// iterate one last time.
 		if len(n.edges) == 0 {
 			keyRune := []rune(key)
@@ -595,7 +640,7 @@ func _recursiveWalk(n *node, fn WalkFn, key string) bool {
 				}
 			}
 			needKey += n.prefix
-			return _recursiveWalk(n, fn, needKey)
+			return t._recursiveWalk(n, fn, needKey)
 		}
 		// If there are now less edges than in the previous iteration,
 		// then do not increment the loop index, since the current index
@@ -611,8 +656,8 @@ func _recursiveWalk(n *node, fn WalkFn, key string) bool {
 // ToMap is used to walk the tree and convert it into a map
 func (t *Tree) ToMap() map[string]interface{} {
 	out := make(map[string]interface{}, t.size)
-	t.Walk(func(k string, v interface{}) bool {
-		out[k] = v
+	t.Walk(func(k string, node *Node) bool {
+		out[k] = node.leaf.val
 		return false
 	})
 	return out

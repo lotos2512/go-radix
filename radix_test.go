@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strconv"
 	"testing"
+	"unsafe"
 )
 
 func TestRadix(t *testing.T) {
@@ -28,7 +29,7 @@ func TestRadix(t *testing.T) {
 		t.Fatalf("bad length: %v %v", r.Len(), len(inp))
 	}
 
-	r.Walk(func(k string, v interface{}) bool {
+	r.Walk(func(k string, node *Node) bool {
 		println(k)
 		return false
 	})
@@ -133,7 +134,7 @@ func TestDeletePrefix(t *testing.T) {
 		}
 
 		out := []string{}
-		fn := func(s string, v interface{}) bool {
+		fn := func(s string, node *Node) bool {
 			out = append(out, s)
 			return false
 		}
@@ -190,6 +191,30 @@ func TestLongestPrefix(t *testing.T) {
 		if m != test.out {
 			t.Fatalf("mis-match: %v %v", m, test)
 		}
+	}
+}
+
+func TestTreePhones(t *testing.T) {
+	r := New()
+	r.Insert("017952592", nil)
+	r.Insert("017952593", nil)
+	r.Insert("017952594", nil)
+	r.Insert("017952595", nil)
+	r.Insert("017952596", nil)
+
+	r.Optimize()
+
+	sizeP := r.MemoryLen()
+	size := *sizeP
+
+	fmt.Printf("Размер переменной дерева: %d байт\n", size)
+
+	phone := []uint32{17952592, 17952593, 17952594, 17952595, 17952596}
+	size = unsafe.Sizeof(phone)
+	fmt.Printf("Размер переменной: %d байт\n", size)
+
+	if r.Len() != 5 {
+		t.Fatalf("must be 2")
 	}
 }
 
@@ -259,7 +284,7 @@ func TestWalkPrefix(t *testing.T) {
 
 	for _, test := range cases {
 		out := []string{}
-		fn := func(s string, v interface{}) bool {
+		fn := func(s string, node *Node) bool {
 			out = append(out, s)
 			return false
 		}
@@ -331,7 +356,7 @@ func TestWalkPath(t *testing.T) {
 
 	for _, test := range cases {
 		out := []string{}
-		fn := func(s string, v interface{}) bool {
+		fn := func(s string, node *Node) bool {
 			out = append(out, s)
 			return false
 		}
@@ -356,7 +381,7 @@ func TestWalkDelete(t *testing.T) {
 	r.Insert("init1/3", nil)
 	r.Insert("init2", nil)
 
-	deleteFn := func(s string, v interface{}) bool {
+	deleteFn := func(s string, node *Node) bool {
 		r.Delete(s)
 		return false
 	}

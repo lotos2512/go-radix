@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"fmt"
 	"strconv"
 	"testing"
 )
@@ -9,9 +8,10 @@ import (
 const maxElements = 70000000
 const FullMsisdn = 79000000000
 
+// BenchmarkName-8   	10960039	       108.4 ns/op	       0 B/op	       0 allocs/op
 func BenchmarkName(b *testing.B) {
 	tree := New()
-	phone := "79017952592"
+	phone := "79017952599"
 	phone = phone[2:]
 	var i = uint32(0)
 	for ; i <= maxElements; i++ {
@@ -19,21 +19,17 @@ func BenchmarkName(b *testing.B) {
 		tree.Insert(v, nil)
 	}
 
-	_, ok := tree.Get(phone)
-	v, _, ok := tree.Minimum()
-	v, _, ok = tree.Maximum()
+	tree.Optimize()
 
-	if ok {
-		fmt.Printf("нашли %s- длинна %d %v", "nil", tree.Len(), v)
-	} else {
-
-	}
-
-	return
 	b.ResetTimer()
 	b.ReportAllocs()
+
+	var ok bool
 	for i := 0; i < b.N; i++ {
 		_, ok = tree.Get(phone)
 	}
 	b.StopTimer()
+	if ok {
+
+	}
 }
