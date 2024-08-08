@@ -355,6 +355,36 @@ func (n *node) mergeChild() {
 func (t *Tree) Get(s string) (interface{}, bool) {
 	n := t.root
 	search := s
+	for {
+		// Check for key exhaution
+		if len(search) == 0 {
+			if n.isLeaf() {
+				return n.leaf.val, true
+			}
+			break
+		}
+
+		// Look for an edge
+		n = n.getEdge(search[0])
+		if n == nil {
+			break
+		}
+
+		// Consume the search prefix
+		if strings.HasPrefix(search, n.prefix) {
+			search = search[len(n.prefix):]
+		} else {
+			break
+		}
+	}
+	return nil, false
+}
+
+// Get is used to lookup a specific key, returning
+// the value and if it was found
+func (t *Tree) GetLastEqual(s string) (interface{}, bool) {
+	n := t.root
+	search := s
 	var prevM *node
 	for {
 		// Check for key exhaution
