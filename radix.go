@@ -8,11 +8,10 @@ import (
 // WalkFn is used when walking the tree. Takes a
 // key and value, returning if iteration should
 // be terminated.
-type WalkFn func(s string, v interface{}) bool
+type WalkFn func(key string, value interface{}) bool
 
 // leafNode is used to represent a value
 type leafNode struct {
-	key string
 	val interface{}
 }
 
@@ -164,7 +163,6 @@ func (t *Tree) Insert(s string, v interface{}) (interface{}, bool) {
 			}
 
 			n.leaf = &leafNode{
-				key: s,
 				val: v,
 			}
 			t.size++
@@ -181,7 +179,6 @@ func (t *Tree) Insert(s string, v interface{}) (interface{}, bool) {
 				label: search[0],
 				node: &node{
 					leaf: &leafNode{
-						key: s,
 						val: v,
 					},
 					prefix: search,
@@ -215,7 +212,6 @@ func (t *Tree) Insert(s string, v interface{}) (interface{}, bool) {
 
 		// Create a new leaf node
 		leaf := &leafNode{
-			key: s,
 			val: v,
 		}
 
@@ -312,7 +308,7 @@ func (t *Tree) deletePrefix(parent, n *node, prefix string) int {
 		recursiveWalk(n, func(s string, v interface{}) bool {
 			subTreeSize++
 			return false
-		})
+		}, prefix)
 		if n.isLeaf() {
 			n.leaf = nil
 		}
@@ -355,6 +351,36 @@ func (n *node) mergeChild() {
 func (t *Tree) Get(s string) (interface{}, bool) {
 	n := t.root
 	search := s
+	for {
+		// Check for key exhaution
+		if len(search) == 0 {
+			if n.isLeaf() {
+				return n.leaf.val, true
+			}
+			break
+		}
+
+		// Look for an edge
+		n = n.getEdge(search[0])
+		if n == nil {
+			break
+		}
+
+		// Consume the search prefix
+		if strings.HasPrefix(search, n.prefix) {
+			search = search[len(n.prefix):]
+		} else {
+			break
+		}
+	}
+	return nil, false
+}
+
+// Get is used to lookup a specific key, returning
+// the value and if it was found
+func (t *Tree) GetLastEqual(s string) (interface{}, bool) {
+	n := t.root
+	search := s
 	var prevM *node
 	for {
 		// Check for key exhaution
@@ -390,6 +416,7 @@ func (t *Tree) LongestPrefix(s string) (string, interface{}, bool) {
 	var last *leafNode
 	n := t.root
 	search := s
+	key := ""
 	for {
 		// Look for a leaf node
 		if n.isLeaf() {
@@ -410,12 +437,13 @@ func (t *Tree) LongestPrefix(s string) (string, interface{}, bool) {
 		// Consume the search prefix
 		if strings.HasPrefix(search, n.prefix) {
 			search = search[len(n.prefix):]
+			key += n.prefix
 		} else {
 			break
 		}
 	}
 	if last != nil {
-		return last.key, last.val, true
+		return key, last.val, true
 	}
 	return "", nil, false
 }
@@ -423,48 +451,53 @@ func (t *Tree) LongestPrefix(s string) (string, interface{}, bool) {
 // Minimum is used to return the minimum value in the tree
 func (t *Tree) Minimum() (string, interface{}, bool) {
 	n := t.root
+	key := ""
 	for {
 		if n.isLeaf() {
-			return n.leaf.key, n.leaf.val, true
+			return key, n.leaf.val, true
 		}
 		if len(n.edges) > 0 {
 			n = n.edges[0].node
+			key += n.prefix
 		} else {
 			break
 		}
 	}
-	return "", nil, false
+	return key, nil, false
 }
 
 // Maximum is used to return the maximum value in the tree
 func (t *Tree) Maximum() (string, interface{}, bool) {
 	n := t.root
+	key := ""
 	for {
 		if num := len(n.edges); num > 0 {
 			n = n.edges[num-1].node
+			key += n.prefix
 			continue
 		}
 		if n.isLeaf() {
-			return n.leaf.key, n.leaf.val, true
+			return key, n.leaf.val, true
 		}
 		break
 	}
-	return "", nil, false
+	return key, nil, false
 }
 
 // Walk is used to walk the tree
 func (t *Tree) Walk(fn WalkFn) {
-	recursiveWalk(t.root, fn)
+	recursiveWalk(t.root, fn, "")
 }
 
 // WalkPrefix is used to walk the tree under a prefix
 func (t *Tree) WalkPrefix(prefix string, fn WalkFn) {
 	n := t.root
 	search := prefix
+	key := ""
 	for {
 		// Check for key exhaustion
 		if len(search) == 0 {
-			recursiveWalk(n, fn)
+			recursiveWalk(n, fn, key)
 			return
 		}
 
@@ -477,11 +510,13 @@ func (t *Tree) WalkPrefix(prefix string, fn WalkFn) {
 		// Consume the search prefix
 		if strings.HasPrefix(search, n.prefix) {
 			search = search[len(n.prefix):]
+			key += n.prefix
 			continue
 		}
 		if strings.HasPrefix(n.prefix, search) {
 			// Child may be under our search prefix
-			recursiveWalk(n, fn)
+			key = key + n.prefix
+			recursiveWalk(n, fn, key)
 		}
 		return
 	}
@@ -494,9 +529,10 @@ func (t *Tree) WalkPrefix(prefix string, fn WalkFn) {
 func (t *Tree) WalkPath(path string, fn WalkFn) {
 	n := t.root
 	search := path
+	key := ""
 	for {
 		// Visit the leaf values if any
-		if n.leaf != nil && fn(n.leaf.key, n.leaf.val) {
+		if n.leaf != nil && fn(key, n.leaf.val) {
 			return
 		}
 
@@ -514,6 +550,7 @@ func (t *Tree) WalkPath(path string, fn WalkFn) {
 		// Consume the search prefix
 		if strings.HasPrefix(search, n.prefix) {
 			search = search[len(n.prefix):]
+			key += n.prefix
 		} else {
 			break
 		}
@@ -522,9 +559,15 @@ func (t *Tree) WalkPath(path string, fn WalkFn) {
 
 // recursiveWalk is used to do a pre-order walk of a node
 // recursively. Returns true if the walk should be aborted
-func recursiveWalk(n *node, fn WalkFn) bool {
+func recursiveWalk(n *node, fn WalkFn, key string) bool {
+	return _recursiveWalk(n, fn, key)
+}
+
+// recursiveWalk is used to do a pre-order walk of a node
+// recursively. Returns true if the walk should be aborted
+func _recursiveWalk(n *node, fn WalkFn, key string) bool {
 	// Visit the leaf values if any
-	if n.leaf != nil && fn(n.leaf.key, n.leaf.val) {
+	if n.leaf != nil && fn(key, n.leaf.val) {
 		return true
 	}
 
@@ -533,7 +576,7 @@ func recursiveWalk(n *node, fn WalkFn) bool {
 	k := len(n.edges) // keeps track of number of edges in previous iteration
 	for i < k {
 		e := n.edges[i]
-		if recursiveWalk(e.node, fn) {
+		if _recursiveWalk(e.node, fn, key+e.node.prefix) {
 			return true
 		}
 		// It is a possibility that the WalkFn modified the node we are
@@ -541,7 +584,18 @@ func recursiveWalk(n *node, fn WalkFn) bool {
 		// so the last edge became the current node n, on which we'll
 		// iterate one last time.
 		if len(n.edges) == 0 {
-			return recursiveWalk(n, fn)
+			keyRune := []rune(key)
+			keyNodeRune := []rune(n.prefix)
+			needKey := ""
+			for i := range keyRune {
+				if keyRune[i] != keyNodeRune[0] {
+					needKey += string(keyRune[i])
+				} else {
+					break
+				}
+			}
+			needKey += n.prefix
+			return _recursiveWalk(n, fn, needKey)
 		}
 		// If there are now less edges than in the previous iteration,
 		// then do not increment the loop index, since the current index
