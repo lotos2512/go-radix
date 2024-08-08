@@ -211,8 +211,8 @@ func TestWalkPrefix(t *testing.T) {
 	}
 
 	type exp struct {
-		inp string
-		out []string
+		input  string
+		output []string
 	}
 	cases := []exp{
 		{
@@ -263,11 +263,11 @@ func TestWalkPrefix(t *testing.T) {
 			out = append(out, s)
 			return false
 		}
-		r.WalkPrefix(test.inp, fn)
+		r.WalkPrefix(test.input, fn)
 		sort.Strings(out)
-		sort.Strings(test.out)
-		if !reflect.DeepEqual(out, test.out) {
-			t.Fatalf("mis-match: %v %v", out, test.out)
+		sort.Strings(test.output)
+		if !reflect.DeepEqual(out, test.output) {
+			t.Fatalf("mis-match: %v %v", out, test.output)
 		}
 	}
 }
