@@ -19,7 +19,7 @@ func BenchmarkName(b *testing.B) {
 		tree.Insert(v, nil)
 	}
 
-	tree.Optimize()
+	tree.Optimize(true)
 
 	b.ResetTimer()
 	b.ReportAllocs()

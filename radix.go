@@ -166,11 +166,15 @@ func longestPrefix(k1, k2 string) int {
 	return i
 }
 
-func (t *Tree) Optimize() {
-	defer runtime.GC()
+func (t *Tree) Optimize(runGC bool) {
 	// clear capacity
 	t.optimizeEnabled = true
-
+	defer func() {
+		if runGC {
+			runtime.GC()
+		}
+		t.optimizeEnabled = false
+	}()
 	v := unsafe.Sizeof(t)
 	if t.root != nil && len(t.root.edges) > 0 {
 		v += unsafe.Sizeof(t.root)
@@ -187,7 +191,6 @@ func (t *Tree) Optimize() {
 		return false
 	})
 	t.memorySize = &v
-	t.optimizeEnabled = false
 }
 
 func (t *Tree) Insert(s string, v interface{}) (interface{}, bool) {

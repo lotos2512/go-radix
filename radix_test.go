@@ -202,7 +202,7 @@ func TestTreePhones(t *testing.T) {
 	r.Insert("017952595", nil)
 	r.Insert("017952596", nil)
 
-	r.Optimize()
+	r.Optimize(true)
 
 	sizeP := r.MemoryLen()
 	size := *sizeP
